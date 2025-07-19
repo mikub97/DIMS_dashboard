@@ -2,6 +2,8 @@
 
 ## File Structure
 
+To be updated
+
 Create this exact folder structure:
 
 ```
@@ -9,8 +11,7 @@ Create this exact folder structure:
 ├── index.html                    # Main HTML file
 ├── config.json                   # Dataset configuration  
 ├── css/
-│   ├── reset.css                 # Your existing reset CSS
-│   └── styles.css                # Dashboard styles
+│   ├── reset.css                 # Your dashboard styles
 ├── js/
 │   ├── app.js                    # Main application logic
 │   └── video-component.js        # Enhanced video component
@@ -34,6 +35,11 @@ Create this exact folder structure:
 - `css/styles.css` - Dashboard styles (extracted from HTML)
 - `js/app.js` - Main application logic (simplified for single-column CSVs)
 - `js/video-component.js` - Enhanced video component with reliable time seeking
+
+## optional RQA 
+1. add to config
+2. run script
+
 
 ### 2. Use your existing reset.css:
 Place your existing `reset.css` in the `css/` folder.
