@@ -8,6 +8,8 @@ class DIMSApp {
         this.currentVideoID = null;
         this.lastClickedPoint = null;
         this.timeSlider = null;
+        this.rqaData = null;
+        this.currentTab = 'timeseries';
     }
 
     async initialize() {
@@ -25,6 +27,7 @@ class DIMSApp {
             
             // Setup UI
             this.setupHeader();
+            this.setupTabs();
             this.setupControls();
             this.setupEventListeners();
             
@@ -39,6 +42,453 @@ class DIMSApp {
         } catch (error) {
             console.error('Failed to initialize app:', error);
             this.showError(`Failed to initialize: ${error.message}`);
+        }
+    }
+
+    setupTabs() {
+        // Check if RQA should be included
+        if (!this.config.include_RQA || this.config.include_RQA.length === 0) {
+            // No RQA, hide tab container if it exists
+            const tabContainer = document.getElementById('tabContainer');
+            if (tabContainer) tabContainer.style.display = 'none';
+            return;
+        }
+        
+        // Create tab UI if not exists
+        let tabContainer = document.getElementById('tabContainer');
+        if (!tabContainer) {
+            // Create tab container above plot container
+            const plotContainer = document.getElementById('plotContainer');
+            tabContainer = document.createElement('div');
+            tabContainer.id = 'tabContainer';
+            tabContainer.innerHTML = `
+                <div class="tabs" style="margin: 20px 0; border-bottom: 2px solid #444;">
+                    <button class="tab-button active" data-tab="timeseries" style="
+                        padding: 10px 20px;
+                        background: #333;
+                        color: white;
+                        border: none;
+                        margin-right: 5px;
+                        cursor: pointer;
+                        border-bottom: 3px solid #007bff;
+                    ">Time Series</button>
+                    <button class="tab-button" data-tab="rqa" style="
+                        padding: 10px 20px;
+                        background: #222;
+                        color: white;
+                        border: none;
+                        margin-right: 5px;
+                        cursor: pointer;
+                        border-bottom: 3px solid transparent;
+                    ">RQA Plots</button>
+                </div>
+            `;
+            plotContainer.parentNode.insertBefore(tabContainer, plotContainer);
+            
+            // Create RQA container
+            const rqaContainer = document.createElement('div');
+            rqaContainer.id = 'rqaContainer';
+            rqaContainer.style.display = 'none';
+            rqaContainer.style.minHeight = '800px';
+            rqaContainer.style.backgroundColor = '#111';
+            rqaContainer.style.padding = '20px';
+            plotContainer.parentNode.insertBefore(rqaContainer, plotContainer.nextSibling);
+        }
+        
+        // Add tab click handlers
+        const tabButtons = tabContainer.querySelectorAll('.tab-button');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const targetTab = e.target.dataset.tab;
+                this.switchTab(targetTab);
+            });
+        });
+    }
+
+    switchTab(tabName) {
+        this.currentTab = tabName;
+        
+        // Update button styles
+        const tabButtons = document.querySelectorAll('.tab-button');
+        tabButtons.forEach(button => {
+            if (button.dataset.tab === tabName) {
+                button.style.background = '#333';
+                button.style.borderBottom = '3px solid #007bff';
+                button.classList.add('active');
+            } else {
+                button.style.background = '#222';
+                button.style.borderBottom = '3px solid transparent';
+                button.classList.remove('active');
+            }
+        });
+        
+        // Show/hide containers
+        const plotContainer = document.getElementById('plotContainer');
+        const rqaContainer = document.getElementById('rqaContainer');
+        
+        if (tabName === 'timeseries') {
+            plotContainer.style.display = 'block';
+            rqaContainer.style.display = 'none';
+        } else if (tabName === 'rqa') {
+            plotContainer.style.display = 'none';
+            rqaContainer.style.display = 'block';
+            
+            // Load RQA if not already loaded
+            if (this.currentVideoID && !this.rqaData) {
+                this.loadRQAData(this.currentVideoID);
+            } else if (this.rqaData && this.lastClickedPoint !== null) {
+                // Update highlights if we have a selected time
+                this.updateRQAHighlights();
+            }
+        }
+    }
+
+    async loadRQAData(videoID) {
+        this.showStatus('Loading RQA data...');
+        
+        try {
+            // Load RQA data
+            const dataPath = `assets/rqa/${videoID}_rqa_data.json`;
+            console.log('Loading RQA data from:', dataPath);
+            
+            const rqaData = await this.loadJSON(dataPath);
+            
+            if (!rqaData) {
+                this.showError('RQA data not found. Run the Python RQA script first.');
+                return;
+            }
+            
+            console.log('RQA data loaded:', rqaData);
+            
+            // Validate data structure
+            if (!rqaData.rqa_data || Object.keys(rqaData.rqa_data).length === 0) {
+                this.showError('RQA data is empty or invalid format.');
+                console.error('Invalid RQA data structure:', rqaData);
+                return;
+            }
+            
+            // Check if data types match config
+            const configDataTypes = this.config.include_RQA || [];
+            const rqaDataTypes = Object.keys(rqaData.rqa_data);
+            console.log('Config data types:', configDataTypes);
+            console.log('RQA data types:', rqaDataTypes);
+            
+            // Warn about mismatches
+            const missingInRQA = configDataTypes.filter(dt => !rqaDataTypes.includes(dt));
+            if (missingInRQA.length > 0) {
+                console.warn('Data types in config but not in RQA data:', missingInRQA);
+            }
+            
+            this.rqaData = rqaData;
+            this.displayRQAPlots();
+            
+        } catch (error) {
+            console.error('Error loading RQA data:', error);
+            this.showError(`Failed to load RQA data: ${error.message}`);
+        }
+    }
+
+    displayRQAPlots() {
+        const container = document.getElementById('rqaContainer');
+        if (!container) {
+            console.error('RQA container element not found!');
+            return;
+        }
+        
+        if (!this.rqaData) {
+            console.error('No RQA data to display');
+            return;
+        }
+        
+        console.log('Displaying RQA plots for:', this.rqaData);
+        
+        container.innerHTML = '<h2 style="color: white; margin-bottom: 20px;">Recurrence Quantification Analysis</h2>';
+        
+        // Create grid for RQA plots
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+        grid.style.gap = '20px';
+        
+        // Create all plot containers first
+        const plotConfigs = [];
+        Object.entries(this.rqaData.rqa_data).forEach(([dataType, plotData], index) => {
+            console.log(`Creating RQA plot container ${index} for ${dataType}`);
+            
+            const plotDiv = document.createElement('div');
+            plotDiv.id = `rqa-plot-${index}`;
+            plotDiv.style.height = '500px';
+            plotDiv.style.backgroundColor = '#222';
+            plotDiv.style.padding = '10px';
+            plotDiv.style.borderRadius = '5px';
+            
+            grid.appendChild(plotDiv);
+            
+            // Store config for later plotting
+            plotConfigs.push({
+                containerId: plotDiv.id,
+                dataType: dataType,
+                plotData: plotData
+            });
+        });
+        
+        // Add grid to container
+        container.appendChild(grid);
+        
+        // Now create all plots after DOM is updated
+        setTimeout(() => {
+            plotConfigs.forEach(config => {
+                try {
+                    console.log(`Creating RQA plot for ${config.dataType} in ${config.containerId}`);
+                    this.createRQAPlot(config.containerId, config.dataType, config.plotData);
+                } catch (error) {
+                    console.error(`Error creating RQA plot for ${config.dataType}:`, error);
+                    const plotDiv = document.getElementById(config.containerId);
+                    if (plotDiv) {
+                        plotDiv.innerHTML = `<div style="color: red; padding: 20px;">Error creating plot: ${error.message}</div>`;
+                    }
+                }
+            });
+            
+            this.showStatus('RQA plots loaded. Click on any plot to select a time point.');
+        }, 100); // Give DOM time to update
+    }
+
+    createRQAPlot(containerId, dataType, plotData) {
+        // Check if Plotly is loaded
+        if (!window.Plotly) {
+            throw new Error('Plotly library not loaded. Make sure to include Plotly in your HTML.');
+        }
+        
+        // Verify container exists
+        const container = document.getElementById(containerId);
+        if (!container) {
+            throw new Error(`Container ${containerId} not found in DOM`);
+        }
+        
+        // Validate plot data
+        if (!plotData.visualization) {
+            throw new Error('Missing visualization data');
+        }
+        
+        const vis = plotData.visualization;
+        
+        // Validate required fields
+        if (!vis.time || !vis.data || !vis.matrix_size || !vis.sparse_matrix) {
+            throw new Error('Missing required visualization fields');
+        }
+        
+        console.log(`Creating RQA plot for ${dataType} with matrix size ${vis.matrix_size}`);
+        
+        // Find the color for this dataType from the main timeseries
+        let dataColor = 'blue'; // default
+        if (this.currentData) {
+            const dataIndex = this.currentData.findIndex(dataset => dataset.name === dataType);
+            if (dataIndex !== -1) {
+                // Use the same HSL color calculation as in plotTimeseries
+                dataColor = `hsl(${dataIndex * 360 / this.currentData.length}, 70%, 50%)`;
+            }
+        }
+        
+        // Sort time and data arrays together to prevent wrapping
+        const timeDataPairs = vis.time.map((t, i) => ({ time: t, data: vis.data[i] }));
+        timeDataPairs.sort((a, b) => a.time - b.time);
+        const sortedTime = timeDataPairs.map(pair => pair.time);
+        const sortedData = timeDataPairs.map(pair => pair.data);
+        
+        // Convert sparse matrix to dense for heatmap
+        const matrix = new Array(vis.matrix_size).fill(null).map(() => 
+            new Array(vis.matrix_size).fill(0)
+        );
+        
+        // Fill in the recurrence points
+        vis.sparse_matrix.forEach(([row, col]) => {
+            if (row < vis.matrix_size && col < vis.matrix_size) {
+                matrix[row][col] = 1;
+            }
+        });
+        
+        // Create traces
+        const traces = [
+            // Main RQA heatmap
+            {
+                x: sortedTime,
+                y: sortedTime,
+                z: matrix,
+                type: 'heatmap',
+                colorscale: [[0, 'white'], [1, 'black']],
+                showscale: false,
+                xaxis: 'x',
+                yaxis: 'y',
+                hovertemplate: 'Time X: %{x:.1f}s<br>Time Y: %{y:.1f}s<extra></extra>'
+            },
+            // X-axis timeseries
+            {
+                x: sortedTime,
+                y: sortedData,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: dataColor, width: 2 },
+                xaxis: 'x2',
+                yaxis: 'y2',
+                hovertemplate: 'Time: %{x:.1f}s<br>Value: %{y:.2f}<extra></extra>'
+            },
+            // Y-axis timeseries (rotated)
+            {
+                x: sortedData,
+                y: sortedTime,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: dataColor, width: 2 },
+                xaxis: 'x3',
+                yaxis: 'y3',
+                hovertemplate: 'Value: %{x:.2f}<br>Time: %{y:.1f}s<extra></extra>'
+            }
+        ];
+        
+        // Create layout with subplots
+        const layout = {
+            title: {
+                text: `${dataType}<br><sub>Recurrence Rate: ${(plotData.recurrence_rate * 100).toFixed(2)}%, Threshold: ${plotData.threshold.toFixed(4)}</sub>`,
+                font: { color: 'white', size: 16 }
+            },
+            paper_bgcolor: '#222',
+            plot_bgcolor: '#333',
+            font: { color: 'white' },
+            grid: {
+                rows: 2,
+                columns: 2,
+                pattern: 'independent',
+                roworder: 'bottom to top'
+            },
+            xaxis: {
+                domain: [0.15, 0.95],
+                anchor: 'y',
+                title: 'Time (s)',
+                gridcolor: '#444'
+            },
+            yaxis: {
+                domain: [0, 0.8],
+                anchor: 'x',
+                title: 'Time (s)',
+                gridcolor: '#444'
+            },
+            xaxis2: {
+                domain: [0.15, 0.95],
+                anchor: 'y2',
+                title: 'Time (s)',
+                gridcolor: '#444'
+            },
+            yaxis2: {
+                domain: [0.85, 1],
+                anchor: 'x2',
+                title: 'Value',
+                gridcolor: '#444'
+            },
+            xaxis3: {
+                domain: [0, 0.1],
+                anchor: 'y3',
+                title: 'Value',
+                gridcolor: '#444',
+                autorange: 'reversed'
+            },
+            yaxis3: {
+                domain: [0, 0.8],
+                anchor: 'x3',
+                title: '',
+                showticklabels: false,
+                gridcolor: '#444'
+            },
+            margin: { t: 80, r: 50, b: 80, l: 80 },
+            hovermode: 'closest'
+        };
+        
+        // Add highlight shape if there's a selected time
+        if (this.lastClickedPoint !== null) {
+            const windowSize = parseInt(document.getElementById('windowSize').value) || 5;
+            const startTime = Math.max(sortedTime[0], this.lastClickedPoint - windowSize / 2);
+            const endTime = Math.min(sortedTime[sortedTime.length - 1], this.lastClickedPoint + windowSize / 2);
+            
+            layout.shapes = [
+                // Vertical lines on main plot
+                {
+                    type: 'line',
+                    x0: startTime, x1: startTime,
+                    y0: sortedTime[0], y1: sortedTime[sortedTime.length - 1],
+                    line: { color: 'yellow', width: 2 },
+                    xref: 'x', yref: 'y'
+                },
+                {
+                    type: 'line',
+                    x0: endTime, x1: endTime,
+                    y0: sortedTime[0], y1: sortedTime[sortedTime.length - 1],
+                    line: { color: 'yellow', width: 2 },
+                    xref: 'x', yref: 'y'
+                },
+                // Horizontal lines on main plot
+                {
+                    type: 'line',
+                    x0: sortedTime[0], x1: sortedTime[sortedTime.length - 1],
+                    y0: startTime, y1: startTime,
+                    line: { color: 'yellow', width: 2 },
+                    xref: 'x', yref: 'y'
+                },
+                {
+                    type: 'line',
+                    x0: sortedTime[0], x1: sortedTime[sortedTime.length - 1],
+                    y0: endTime, y1: endTime,
+                    line: { color: 'yellow', width: 2 },
+                    xref: 'x', yref: 'y'
+                },
+                // Highlight box
+                {
+                    type: 'rect',
+                    x0: startTime, x1: endTime,
+                    y0: startTime, y1: endTime,
+                    fillcolor: 'yellow',
+                    opacity: 0.1,
+                    line: { width: 0 },
+                    xref: 'x', yref: 'y'
+                }
+            ];
+        }
+        
+        console.log(`Calling Plotly.newPlot for ${containerId}`);
+        Plotly.newPlot(containerId, traces, layout, { responsive: true });
+        
+        // Add click handler
+        document.getElementById(containerId).on('plotly_click', (data) => {
+            if (data.points && data.points.length > 0) {
+                const point = data.points[0];
+                
+                // Check which subplot was clicked
+                if (point.xaxis && point.xaxis._id === 'x' && point.yaxis._id === 'y') {
+                    // Main RQA plot clicked
+                    const clickedTime = point.x;
+                    console.log(`RQA clicked at time: ${clickedTime.toFixed(2)}s`);
+                    
+                    // Update video and timeseries
+                    this.handleTimeClick(clickedTime);
+                    
+                    // Update all RQA plots to show highlight
+                    setTimeout(() => this.updateRQAHighlights(), 100);
+                    
+                    // Don't switch tabs - stay on RQA
+                    // this.switchTab('timeseries');
+                }
+            }
+        });
+    }
+
+    updateRQAHighlights() {
+        // Re-render all RQA plots with updated highlights
+        if (this.rqaData && this.rqaData.rqa_data) {
+            Object.entries(this.rqaData.rqa_data).forEach(([dataType, plotData], index) => {
+                const containerId = `rqa-plot-${index}`;
+                if (document.getElementById(containerId)) {
+                    this.createRQAPlot(containerId, dataType, plotData);
+                }
+            });
         }
     }
 
@@ -104,16 +554,28 @@ class DIMSApp {
         try {
             console.log(`Attempting to load JSON from: ${url}`);
             const response = await fetch(url);
+            console.log(`Fetch response for ${url}:`, response.status, response.statusText);
+            
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            const data = await response.json();
-            console.log(`Successfully loaded JSON from: ${url}`, data);
-            return data;
+            
+            const text = await response.text();
+            console.log(`Raw response length for ${url}:`, text.length);
+            
+            try {
+                const data = JSON.parse(text);
+                console.log(`Successfully parsed JSON from: ${url}`, data);
+                return data;
+            } catch (parseError) {
+                console.error(`JSON parse error for ${url}:`, parseError);
+                console.error('First 500 chars of response:', text.substring(0, 500));
+                throw parseError;
+            }
         } catch (error) {
             console.error(`Failed to load JSON from ${url}:`, error);
-            if (error.name === 'SyntaxError') {
-                console.error('Invalid JSON format');
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                console.error('This might be a CORS issue. Make sure you are running a local server.');
             }
             return null;
         }
@@ -136,13 +598,16 @@ class DIMSApp {
     }
 
     cleanTimeseriesData(data) {
+        // Sort data by time first
+        const sortedData = [...data].sort((a, b) => a.Time - b.Time);
+        
         // Check if time values reset (wrap around)
         let wrapDetected = false;
         let wrapIndex = -1;
         
-        for (let i = 1; i < data.length; i++) {
-            if (data[i].Time < data[i-1].Time) {
-                console.warn(`Time wrap detected at index ${i}: ${data[i-1].Time} -> ${data[i].Time}`);
+        for (let i = 1; i < sortedData.length; i++) {
+            if (sortedData[i].Time < sortedData[i-1].Time - 0.1) { // Allow small tolerance for floating point
+                console.warn(`Time wrap detected at index ${i}: ${sortedData[i-1].Time} -> ${sortedData[i].Time}`);
                 wrapDetected = true;
                 wrapIndex = i;
                 break;
@@ -152,10 +617,10 @@ class DIMSApp {
         if (wrapDetected) {
             // Return only the first segment before the wrap
             console.log(`Removing wrapped data after index ${wrapIndex}`);
-            return data.slice(0, wrapIndex);
+            return sortedData.slice(0, wrapIndex);
         }
         
-        return data;
+        return sortedData;
     }
 
     async loadDataForVideoID(videoID) {
@@ -389,6 +854,11 @@ class DIMSApp {
         // Update transcript
         this.updateTranscript(time, windowSize);
         
+        // Update RQA highlights if in RQA tab
+        if (this.currentTab === 'rqa' && this.rqaData) {
+            this.updateRQAHighlights();
+        }
+        
         // Update status
         document.getElementById('status').textContent = 
             `Selected time: ${time.toFixed(2)}s (window: ${windowSize}s)`;
@@ -519,6 +989,7 @@ class DIMSApp {
             this.currentData = data.timeseries;
             this.currentTranscript = data.transcript;
             this.currentVideoID = videoID;
+            this.rqaData = null; // Reset RQA data for new video
             
             if (this.currentData && this.currentData.length > 0) {
                 // Create time slider - find min/max across all datasets
@@ -546,6 +1017,11 @@ class DIMSApp {
                     this.updateTranscript(minTime, this.config.defaultWindowSize);
                     
                     this.showStatus(`Loaded data for ${videoID}. Click on any point to segment video.`);
+                    
+                    // Load RQA data if on RQA tab
+                    if (this.currentTab === 'rqa' && this.config.include_RQA) {
+                        this.loadRQAData(videoID);
+                    }
                 } else {
                     this.showStatus('No valid time data found for this video ID.');
                 }

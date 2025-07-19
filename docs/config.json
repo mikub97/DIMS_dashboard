@@ -1,8 +1,9 @@
 {
     "videoIDs": ["3120"],
     "dataTypes": {
-        "3120": ["syncbody", "neuralsync", "neuralsync2", "neuralsync3"]
+        "3120": ["bodysync", "neuralsync", "neuralsync2", "neuralsync3"]
     },
+    "include_RQA": ["bodysync", "neuralsync", "neuralsync2", "neuralsync3"],
     "defaultWindowSize": 5,
     "title": "DIMS Dashboard",
     "subtitle": "Multimodal Synchrony Exploration Visualization",
