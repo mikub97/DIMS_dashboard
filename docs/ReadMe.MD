@@ -1,5 +1,7 @@
 # DIMS Dashboard - Client-Side Setup Guide
 
+Github website: https://wimpouw.github.io/DIMS_dashboard/
+
 ## File Structure
 
 To be updated
