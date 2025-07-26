@@ -145,7 +145,7 @@ Open `config.json` in a text editor and set it up like this:
 
 Your dashboard will be available at:
 ```
-https://your-username.github.io/your-dashboard/
+https://{your_username}.github.io/{repository_name}/
 ```
 
 ---
