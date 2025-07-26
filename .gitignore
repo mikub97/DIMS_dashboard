@@ -1,0 +1,5 @@
+dashboard generator/node_modules/
+dashboard generator/dist/
+dashboard generator/*.log
+dashboard generator/.DS_Store
+dashboard generator/.env

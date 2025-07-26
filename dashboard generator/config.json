@@ -1,0 +1,16 @@
+{
+  "videoIDs": [
+    "11",
+    "group_1753310754982"
+  ],
+  "dataTypes": {
+    "11": [],
+    "group_1753310754982": []
+  },
+  "include_RQA": [],
+  "defaultWindowSize": 5,
+  "title": "DIMS Dashboard",
+  "subtitle": "Multimodal Synchrony Exploration Visualization",
+  "authors": "Your team's Name",
+  "contacts": "contacts: Your team's contacts"
+}

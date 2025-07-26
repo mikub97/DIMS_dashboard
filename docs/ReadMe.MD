@@ -2,6 +2,9 @@
 
 Github website: https://wimpouw.github.io/DIMS_dashboard/
 
+For step-by-step instructions on how to use this dashboard with your own data, see the [Tutorial](TUTORIAL.md).
+
+
 ## File Structure
 
 To be updated
